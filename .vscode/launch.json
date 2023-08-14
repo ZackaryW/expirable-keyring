@@ -1,0 +1,30 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "run get mysecret",
+            "type": "python",
+            "request": "launch",
+            "program": "ekring/cli.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "secret","get", "MY_SECRET"
+            ]
+        },
+        {
+            "name": "run set mysecret",
+            "type": "python",
+            "request": "launch",
+            "program": "ekring/cli.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "secret","set", "MY_SECRET", "123456", "in 1 minute"
+            ]
+        }
+    ]
+}
