@@ -8,23 +8,25 @@
             "name": "run get mysecret",
             "type": "python",
             "request": "launch",
-            "program": "ekring/cli.py",
+            "program": "test.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": [
-                "secret","get", "MY_SECRET"
-            ]
+                "secret","get", "MY_TEST"
+            ],
+            "cwd": "${workspaceFolder}"
         },
         {
             "name": "run set mysecret",
             "type": "python",
             "request": "launch",
-            "program": "ekring/cli.py",
+            "program": "test.py",
             "console": "integratedTerminal",
             "justMyCode": false,
             "args": [
-                "secret","set", "MY_SECRET", "123456", "in 1 minute"
-            ]
+                "secret","set", "MY_TEST", "123456", "in 1 minute"
+            ],
+            "cwd": "${workspaceFolder}"
         }
     ]
 }

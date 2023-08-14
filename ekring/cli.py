@@ -60,6 +60,22 @@ def get(service :str, name :str):
 @cli.command()
 @click.argument('service')
 @click.argument('name')
+@click.argument('differs_by', default=None)
+def differ(service :str, name :str, differs_by :str):
+    try:
+        factory.differ_password_expiration(
+            service, name, differs_by
+        )
+    except NotAnExpirableKey:
+        click.echo("INVALID")
+    except Exception as e:
+        click.echo("ERROR")
+        click.echo(e)
+
+
+@cli.command()
+@click.argument('service')
+@click.argument('name')
 @click.argument('password')
 @click.argument('expiration')
 def set(service :str, name :str, password :str, expiration :str):
@@ -106,13 +122,13 @@ def get_secret(name :str):
         click.echo("EXPIRED")
     except Exception as e:
         click.echo("ERROR")
-        click.echo(e)
+        raise e
     
 @secret.command("set")
 @click.argument('name')
 @click.argument('secret')
 @click.argument('expiration')
-def set_secret(name :str, secret :str, expiration :str):
+def set_secret(name :str, secret :str, expiration :str) -> None:
     try:
         if "." in expiration and expiration.replace(".", "").isdigit():
             expiration = float(expiration)
@@ -123,7 +139,7 @@ def set_secret(name :str, secret :str, expiration :str):
         factory.set_secret(name, secret, expiration)
     except Exception as e:
         click.echo("INVALID")
-        click.echo(e)
+        raise e
 
 @secret.command("delete")
 @click.argument('name')
@@ -134,7 +150,8 @@ def delete_secret(name :str):
         click.echo("INVALID")
     except Exception as e:
         click.echo("ERROR")
-        click.echo(e)
+        raise e
+    
 
 if __name__ == "__main__":
     cli()
