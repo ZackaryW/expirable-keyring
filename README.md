@@ -9,7 +9,7 @@ This is an extension to the keyring implementation that allows you to set an exp
 ## How to install?
 install using github source
 ```bash
-pip install git+
+pip install git+https://github.com/ZackaryW/expirable-keyring.git@stable#egg=expirable-keyring
 ```
 
 ## How is it implemented?

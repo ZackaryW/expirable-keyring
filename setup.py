@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="ekring",
+    name="expirable-keyring",
     version="0.1.0",
     description="primarily a cli tool that supports keyring entries with expiration",
     author="Zackary W",
