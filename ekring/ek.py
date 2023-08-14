@@ -131,7 +131,7 @@ class ExpirableKeyringFactory:
 
         if date_str in self.meta:
             encryption_key = self.meta.get_encryption_key(date_str)
-            encrypted_content = password_encrypt(password.encode(), encryption_key)
+            encrypted_content = password_encrypt(password, encryption_key)
             self.meta.set_user(date_str, username)
         else:
             encrypted_content, encryption_key = password_encrypt_with_gen(password)
