@@ -137,8 +137,9 @@ class ExpirableKeyringFactory:
             encrypted_content, encryption_key = password_encrypt_with_gen(password)
             self.meta.set_encryption_key(date_str, encryption_key)
             self.meta.set_user(date_str, username)
-
+            
         set_password(service, username, encrypted_content)
+        self.meta.update_meta()
 
     def get_password(
         self, 
