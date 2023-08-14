@@ -19,57 +19,107 @@ class AlreadyExpiredKey(Exception):
 
 class ExpirableKeyringMeta:
     _factory : "ExpirableKeyringFactory"
-    pairs : typing.Dict[str, typing.Tuple[str, typing.List[str]]]
+    date_encryption : typing.Dict[str, str]
+    name_dates : typing.Dict[str, str]
+    _cached_dates : typing.Dict[str, datetime.datetime]
 
     def __init__(self, factory : "ExpirableKeyringFactory"):
         self._factory = factory
+        self._cached_dates = {}
         self._fetch_pairs()
 
     def _fetch_pairs(self):
         raw = get_password(self._factory.META_KEY, self._factory.META_NAME)        
         if raw is None:
-            self.pairs = {}
+            self.date_encryption = {}
+            self.name_dates = {}
             return
 
-        self.pairs = json.loads(raw)
+        json_raw = json.loads(raw)
+        self.date_encryption = json_raw["date_encryption"]
+        self.name_dates = json_raw["name_dates"]
 
-    def __contains__(self, key : str):
-        return key in self.pairs    
+    def has_username(self, service : str, username : str):
+        return f"{service}|{username}" in self.name_dates
     
-    def has_username(self, username : str):
-        for v in self.pairs.values():
-            if username in v[1]:
-                return True
-        return False
-    
-    def get_encryption_key(self, key : str):
-        return self.pairs[key][0]
-    
-    def set_user(self, key : str, username : str):
-        if key not in self.pairs:
-            raise ValueError("encryption key must be set before setting username")
-    
-        self.pairs[key][1].append(username)
+    def has_date(self, date_str : str):
+        return date_str in self.date_encryption
 
-    def set_encryption_key(self, key :str, encryption_key : str):
-        if key not in self.pairs:
-            self.pairs[key] = [encryption_key, []]
-        else:
-            raise ValueError("encryption key already set")
+    def get_encryption_key(self, datestr : str):
+        return self.date_encryption[datestr]
+    
+    def set_user(self, datestr : str, service : str, username : str):
+        if "|" in username:
+            raise ValueError("username cannot contain | character")
+    
+        if "|" in service:
+            raise ValueError("service cannot contain | character")
+
+        name = f"{service}|{username}"
+
+        if datestr not in self.date_encryption:
+            raise ValueError("date not found")
+        
+        self.name_dates[name] = datestr
+
+    def set_encryption_key(self, datestr :str, encryption_key : str):
+        if datestr in self.date_encryption:
+            raise ValueError("date already exists")
+        
+        self.date_encryption[datestr] = encryption_key
     
     def _has_meta(self):
         return has_password(self._factory.META_KEY, self._factory.META_NAME)
 
     def update_meta(self):
-        set_password(self._factory.META_KEY, self._factory.META_NAME, json.dumps(self.pairs))
+        set_password(self._factory.META_KEY, self._factory.META_NAME, json.dumps(
+            {
+                "date_encryption" : self.date_encryption,
+                "name_dates" : self.name_dates
+            }
+        ))
 
-    def delete_user(self, username :str):
-        for date_str, (_, usernames) in self.pairs.items():
-            if username in usernames:
-                usernames.remove(username)
-                if len(usernames) == 0:
-                    del self.pairs[date_str]
-                break
+    def delete_entry(self, service : str, username : str, skipCheckDateEncrypted : bool = False):
+        name = f"{service}|{username}"
+        if name not in self.name_dates:
+            raise ValueError("entry not found")
+        
+        date_str = self.name_dates[name]
+        del self.name_dates[name]
+        if skipCheckDateEncrypted and date_str not in self.name_dates.values():
+            del self.date_encryption[date_str]
+
+        self.update_meta()
+
+    def delete_date(self, datestr :str):
+        if datestr not in self.date_encryption:
+            raise ValueError("date not found")
+
+        del self.date_encryption[datestr]
+        self.name_dates = {k : v for k, v in self.name_dates.items() if v != datestr}
+        self.update_meta()
+
+    def yield_dates(self):
+        for name, datestr in self.name_dates.items():
+            svc, username = name.split("|", 1)
+            if datestr not in self._cached_dates:
+                date_parsed = datetime.datetime.strptime(datestr, self._factory.DATE_FORMAT)
+                self._cached_dates[datestr]: datetime.datetime = date_parsed
+
+            yield datestr, self._cached_dates[datestr], svc, username
+
+    def yield_expired(self):
+        for datestr, date_parsed, svc, username in self.yield_dates():
+            if date_parsed < datetime.datetime.now():
+                yield datestr, date_parsed, svc, username
+
+    def yield_items(self):
+        for name, datestr in self.name_dates.items():
+            svc , username = name.split("|", 1)
+            yield svc, username, datestr, self.date_encryption[datestr]
+
+
+
 @dataclass
 class ExpirableKeyringFactory:
     META_NAME : str = field(default_factory=lambda : "EKR_META_" + str(default_counter()))
@@ -94,25 +144,24 @@ class ExpirableKeyringFactory:
         raise NotImplementedError("ensure_bypass_20_limit not implemented yet")
 
     def prune_expired(self):
-        for date_str in self.meta.pairs.keys():
-            date_parsed = datetime.datetime.strptime(date_str, self.DATE_FORMAT)
-            if date_parsed < datetime.datetime.now():
-                pending_to_delete_usernames = self.meta.pairs[date_str][1]
-                for username in pending_to_delete_usernames:
-                    delete_password(self.NORMAL_KEY.format(name=username), username)
-                del self.meta.pairs[date_str]
+        expired_datestr = []
+        for datestr, _, svc, username in self.meta.yield_expired():
+            self.meta.delete_entry(svc, username)
+            delete_password(svc, username)
+            if datestr not in expired_datestr:
+                expired_datestr.append(datestr)
+        
         self.meta.update_meta()
+
 
     def prune_if_expired(self, datestr : str):
         date_parsed = datetime.datetime.strptime(datestr, self.DATE_FORMAT)
         if date_parsed >= datetime.datetime.now():
             return False
         
-        pending_to_delete_usernames = self.meta.pairs[datestr][1]
-        for username in pending_to_delete_usernames:
-            delete_password(self.SECRET_KEY.format(name=username), username)
-        del self.meta.pairs[datestr]
+        self.meta.delete_date(datestr)
         self.meta.update_meta()
+
         return True
 
     def set_password(
@@ -129,14 +178,14 @@ class ExpirableKeyringFactory:
         if target_date < datetime.datetime.now():
             raise AlreadyExpiredKey("expiration date already passed")
 
-        if date_str in self.meta:
+        if self.meta.has_date(date_str):
             encryption_key = self.meta.get_encryption_key(date_str)
-            encrypted_content = password_encrypt(password, encryption_key)
-            self.meta.set_user(date_str, username)
+            encrypted_content = password_encrypt(password.encode(), encryption_key)
+            self.meta.set_user(date_str,service, username)
         else:
             encrypted_content, encryption_key = password_encrypt_with_gen(password)
             self.meta.set_encryption_key(date_str, encryption_key)
-            self.meta.set_user(date_str, username)
+            self.meta.set_user(date_str,service, username)
             
         set_password(service, username, encrypted_content)
         self.meta.update_meta()
@@ -146,21 +195,21 @@ class ExpirableKeyringFactory:
         service : str,
         username : str
     ):
-        for date_str, (encryption_key, usernames) in self.meta.pairs.items():
-            if username not in usernames:
-                continue
-            
-            if self.prune_if_expired(date_str):
-                raise AlreadyExpiredKey(f"username {username} already expired")
-            
-            encrypted_content = get_password(service, username)
-            if encrypted_content is None:
-                return None
+        if not self.meta.has_username(service, username):
+            raise NotAnExpirableKey(f"{service}:{username} not found")
 
-            decrypted = password_decrypt(encrypted_content, encryption_key)
-            return decrypted
+        datestr = self.meta.name_dates[f"{service}|{username}"]
 
-        raise NotAnExpirableKey(f"username {username} not found")
+        if self.prune_if_expired(datestr):
+            raise AlreadyExpiredKey(f"{service}:{username} already expired")
+    
+        encrypted_content = get_password(service, username)
+        if encrypted_content is None:
+            return None
+
+        encryption_key = self.meta.get_encryption_key(datestr)
+        decrypted = password_decrypt(encrypted_content, encryption_key)
+        return decrypted
     
     def set_secret(
         self,
@@ -184,19 +233,46 @@ class ExpirableKeyringFactory:
 
     def delete_password(
         self,
+        service : str,
         username : str
     ):
         if not self.meta.has_username(username):
             raise NotAnExpirableKey(f"username {username} not found")
         
-        delete_password(self.SECRET_KEY.format(name=username), username)
-        self.meta.delete_user(username)
+        delete_password(service, username)
+        self.meta.delete_entry(service, username)
 
     def purge_all(
         self
     ):
-        for datestr, (_, usernames) in self.meta.pairs.items():
-            for username in usernames:
-                delete_password(self.SECRET_KEY.format(name=username), username)
+        for date_str, _, svc, username in self.meta.yield_dates():
+            delete_password(svc, username)
+            self.meta.delete_date(date_str)
+        self.meta.update_meta()
+    
+    def differ_password_expiration(
+        self, 
+        service : str,
+        username : str,
+        expiration_date : typing.Union[str, int, float, datetime.timedelta, datetime.datetime]
+    ):
+        if not self.meta.has_username(service, username):
+            raise NotAnExpirableKey(f"{service}:{username} not found")
 
-        delete_password(self.META_KEY, self.META_NAME)
+        original_datestr = self.meta.name_dates[f"{service}|{username}"]
+        target_date = parse_date_info(expiration_date)
+        target_date_str = target_date.strftime(self.DATE_FORMAT)
+        
+        # check if only 1 datestr in meta
+        if self.meta.name_dates.values().count(original_datestr) == 1:
+            self.meta.name_dates[f"{service}|{username}"] = target_date_str
+            self.meta.update_meta()
+        else:
+            # if more than 1 datestr in meta, create new entry
+            self.set_password(
+                service,
+                username,
+                self.get_password(service, username),
+                target_date
+            )
+            
