@@ -28,4 +28,15 @@ factory.set_password('service', 'username', 'password', expire_date="in 2 days")
 factory.get_password('service', 'username') # will return 'password'
 ```
 
+### CLI Usage
+```bash
+ekring set service username password "in 2 days"
+ekring get service username
+ekring secret set username password "in 2 days"
+ekring secret get username
+ekring differ service username "in 3 days"
+ekring delete service username
+```
 
+
+```
